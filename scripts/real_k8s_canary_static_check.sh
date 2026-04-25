@@ -4,6 +4,7 @@ set -euo pipefail
 ENV_FILE=${ENV_FILE:-.env.real-canary.example}
 
 bash ./scripts/check_env_files.sh
+bash ./scripts/check_env_files.sh "$ENV_FILE"
 
 python3 - "$ENV_FILE" <<'PY'
 from __future__ import annotations

@@ -16,6 +16,8 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 2
 fi
 
+bash ./scripts/check_env_files.sh "$ENV_FILE"
+
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
