@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${REAL_K8S_PREFLIGHT_CONFIRM:-}" != "I_UNDERSTAND_THIS_TOUCHES_K8S_API" ]; then
+  cat >&2 <<'TXT'
+Refusing to run Real Canary 0 K8s API preflight.
+This script does not create resources, but it does call the Kubernetes API with kubectl auth can-i checks.
+Set REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_TOUCHES_K8S_API only after human approval for this specific K8s API preflight.
+TXT
+  exit 2
+fi
+
 ENV_FILE=${ENV_FILE:-.env.real-canary}
 if [ ! -f "$ENV_FILE" ]; then
   echo "$ENV_FILE is missing. Copy .env.real-canary.example and fill test Sealos values first." >&2

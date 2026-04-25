@@ -2,6 +2,8 @@
 set -euo pipefail
 cp -n .env.example .env || true
 bash ./scripts/check_host_permissions.sh >/dev/null
+bash ./scripts/check_env_files.sh
+bash ./scripts/real_k8s_canary_static_check.sh
 # 为避免旧数据库 schema 影响本地验证，默认清理 volume。生产环境不要执行这个脚本。
 docker compose down -v --remove-orphans >/dev/null 2>&1 || true
 docker compose up -d --build
