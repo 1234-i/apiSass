@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "${REAL_K8S_PREFLIGHT_CONFIRM:-}" != "I_UNDERSTAND_THIS_TOUCHES_K8S_API" ]; then
+if [ "${REAL_K8S_PREFLIGHT_CONFIRM:-}" != "I_UNDERSTAND_THIS_WILL_QUERY_K8S_API" ]; then
   cat >&2 <<'TXT'
 Refusing to run Real Canary 0 K8s API preflight.
 This script does not create resources, but it does call the Kubernetes API with kubectl auth can-i checks.
-Set REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_TOUCHES_K8S_API only after human approval for this specific K8s API preflight.
+Set REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_WILL_QUERY_K8S_API only after human approval for this specific K8s API preflight.
 TXT
   exit 2
 fi

@@ -73,7 +73,7 @@ if failures:
 print(f"ok {env_path} is K8s-only Real Canary 0 static config")
 PY
 
-if ! grep -q 'REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_TOUCHES_K8S_API' scripts/real_k8s_canary_preflight.sh; then
+if ! grep -q 'REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_WILL_QUERY_K8S_API' scripts/real_k8s_canary_preflight.sh; then
   echo 'scripts/real_k8s_canary_preflight.sh must require REAL_K8S_PREFLIGHT_CONFIRM before kubectl checks' >&2
   exit 1
 fi

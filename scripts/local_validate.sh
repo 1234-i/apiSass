@@ -6,6 +6,11 @@ bash ./scripts/check_source_format.sh
 bash ./scripts/check_env_files.sh
 bash ./scripts/real_k8s_canary_static_check.sh
 bash ./scripts/real_k8s_canary_doctor.sh
+if [ -f .env.real-canary ] || [ -d real-kubeconfig ]; then
+  echo "Skipping doctor matrix because real canary files exist."
+else
+  bash ./scripts/real_k8s_canary_doctor_matrix.sh
+fi
 # 为避免旧数据库 schema 影响本地验证，默认清理 volume。生产环境不要执行这个脚本。
 docker compose down -v --remove-orphans >/dev/null 2>&1 || true
 docker compose up -d --build

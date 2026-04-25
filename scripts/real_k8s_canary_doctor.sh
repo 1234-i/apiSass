@@ -12,7 +12,7 @@ fi
 ENV_FILE=${ENV_FILE:-.env.real-canary}
 HOST_KUBECONFIG=${REAL_KUBECONFIG_HOST_PATH:-./real-kubeconfig/sealos-canary.yaml}
 
-bash ./scripts/check_env_files.sh "$ENV_FILE"
+bash ./scripts/check_env_files.sh --allow-missing "$ENV_FILE"
 
 python3 - "$ENV_FILE" "$HOST_KUBECONFIG" "$STRICT" <<'PY'
 from __future__ import annotations
@@ -74,9 +74,23 @@ def git_ignored(path: str) -> bool:
             stderr=subprocess.DEVNULL,
             check=False,
         )
+        if result.returncode == 0:
+            return True
     except FileNotFoundError:
+        pass
+
+    ignore_file = Path(".gitignore")
+    if not ignore_file.exists():
         return False
-    return result.returncode == 0
+    for raw in ignore_file.read_text(encoding="utf-8").splitlines():
+        pattern = raw.strip()
+        if not pattern or pattern.startswith("#"):
+            continue
+        if pattern == path:
+            return True
+        if pattern.endswith("/") and path.startswith(pattern):
+            return True
+    return False
 
 
 issues: list[str] = []
@@ -135,7 +149,7 @@ print(f"kubeconfig_gitignored={'true' if kubeconfig_ignored else 'false'}")
 print(f"missing={','.join(missing)}")
 print(f"issues={','.join(issues)}")
 if ready:
-    print("required_confirmation=REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_TOUCHES_K8S_API")
+    print("required_confirmation=REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_WILL_QUERY_K8S_API")
 else:
     print("next_action=copy .env.real-canary.example to .env.real-canary and prepare real-kubeconfig/sealos-canary.yaml")
 

@@ -9,10 +9,12 @@ Current phase: local/mock/dry-run readiness only.
 - `bash ./scripts/check_env_files.sh .env.real-canary`
 - `bash ./scripts/real_k8s_canary_static_check.sh`
 - `bash ./scripts/real_k8s_canary_doctor.sh`
+- `bash ./scripts/real_k8s_canary_doctor_matrix.sh`
 - `bash ./scripts/local_validate.sh`
 - `docker compose exec api pytest -q tests`
 
 These checks are local-only or Docker-local. The offline doctor does not call `kubectl`, `curl`, `docker compose exec`, Sealos, New API, Sub2API, Cloudflare, DNS, or API-key services.
+The doctor matrix creates only fake local files and refuses to run if `.env.real-canary` or `real-kubeconfig` already exists.
 
 ## Codex Must Not Run Without Human-Specific Authorization
 
@@ -89,7 +91,7 @@ safe_to_run_real_preflight=true
 the human may authorize this exact command:
 
 ```bash
-REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_TOUCHES_K8S_API \
+REAL_K8S_PREFLIGHT_CONFIRM=I_UNDERSTAND_THIS_WILL_QUERY_K8S_API \
 bash ./scripts/real_k8s_canary_preflight.sh
 ```
 

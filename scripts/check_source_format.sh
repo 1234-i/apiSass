@@ -13,6 +13,7 @@ minimum_lines = {
     "scripts/check_env_files.sh": 40,
     "scripts/real_k8s_canary_static_check.sh": 70,
     "scripts/real_k8s_canary_doctor.sh": 100,
+    "scripts/real_k8s_canary_doctor_matrix.sh": 100,
     "scripts/real_k8s_canary_preflight.sh": 80,
     "scripts/real_k8s_canary_open.sh": 80,
     "scripts/real_k8s_canary_cleanup.sh": 40,
@@ -29,9 +30,10 @@ required_markers = {
         "CLOUDFLARE_MOCK=true",
     ),
     ".env.real.example": ("ALLOW_REAL_EXTERNAL_CALLS=true", "NEWAPI_MOCK=false", "APPLY_K8S=true"),
-    "scripts/real_k8s_canary_preflight.sh": ("REAL_K8S_PREFLIGHT_CONFIRM", "kubectl auth can-i"),
-    "scripts/real_k8s_canary_doctor.sh": ("will_call_k8s_api=false", "ready_for_human_authorized_preflight"),
-    "scripts/local_validate.sh": ("check_source_format.sh", "check_env_files.sh", "real_k8s_canary_doctor.sh", "docker compose up", "container_tests.sh"),
+    "scripts/real_k8s_canary_preflight.sh": ("REAL_K8S_PREFLIGHT_CONFIRM", "I_UNDERSTAND_THIS_WILL_QUERY_K8S_API", "kubectl auth can-i"),
+    "scripts/real_k8s_canary_doctor.sh": ("will_call_k8s_api=false", "ready_for_human_authorized_preflight", "I_UNDERSTAND_THIS_WILL_QUERY_K8S_API"),
+    "scripts/real_k8s_canary_doctor_matrix.sh": ("doctor matrix case A", "doctor matrix case D", "I_UNDERSTAND_THIS_WILL_QUERY_K8S_API"),
+    "scripts/local_validate.sh": ("check_source_format.sh", "check_env_files.sh", "real_k8s_canary_doctor.sh", "real_k8s_canary_doctor_matrix.sh", "docker compose up", "container_tests.sh"),
 }
 
 failed = False

@@ -8,7 +8,13 @@ import re
 import sys
 from pathlib import Path
 
-files = [Path(arg) for arg in sys.argv[1:]]
+args = sys.argv[1:]
+allow_missing = False
+if args and args[0] == "--allow-missing":
+    allow_missing = True
+    args = args[1:]
+
+files = [Path(arg) for arg in args]
 if not files:
     files = [Path(".env.example"), Path(".env.real-canary.example"), Path(".env.real.example")]
 key_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
@@ -17,7 +23,11 @@ failed = False
 
 for path in files:
     if not path.exists():
-        print(f"ok {path} missing; skipped")
+        if allow_missing:
+            print(f"ok {path} missing; skipped")
+        else:
+            print(f"{path}: missing", file=sys.stderr)
+            failed = True
         continue
 
     seen: dict[str, int] = {}

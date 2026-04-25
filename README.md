@@ -14,9 +14,10 @@
 - Sub2API 适配器支持 `SUB2API_TENANT_KEY`：你可以先在 Sub2API 后台创建站长 key，用 Sub2API 自带账单给下游站长结算。
 - New API manifest 增加生产相关 env：`CRYPTO_SECRET`、`TZ`、`STREAMING_TIMEOUT`、`ERROR_LOG_ENABLED`、`BATCH_UPDATE_ENABLED`。
 - 新增真实开站脚本骨架：`scripts/real_open_station.sh`。它有强制确认闸门，默认不会运行真实外部操作。
-- 新增 Real Canary 0 离线 doctor：`scripts/real_k8s_canary_doctor.sh`。它只检查本地 `.env.real-canary`、kubeconfig 文件状态、gitignore 和安全开关，不调用 Kubernetes API。
+- 新增 Real Canary 0 离线 doctor：`scripts/real_k8s_canary_doctor.sh` 和 `scripts/real_k8s_canary_doctor_matrix.sh`。它们只检查本地 `.env.real-canary`、kubeconfig 文件状态、gitignore 和安全开关，不调用 Kubernetes API。
 - 新增真实链路文档：`docs/REAL_OPEN_STATION_FLOW.md`。
 - 新增 Real Canary 0 runbook：`docs/REAL_CANARY_0_RUNBOOK.md`。
+- 真实 K8s preflight 只允许在人类明确授权后查询 Kubernetes API，确认词为 `I_UNDERSTAND_THIS_WILL_QUERY_K8S_API`。
 
 ## 本地一键验证
 

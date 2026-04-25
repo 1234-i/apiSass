@@ -15,6 +15,8 @@ COPY scripts /app/scripts
 COPY tests /app/tests
 COPY pytest.ini /app/pytest.ini
 COPY docs /app/docs
+COPY .gitignore /app/.gitignore
+COPY .env.example .env.real-canary.example .env.real.example /app/
 RUN chmod +x /app/scripts/*.sh
 EXPOSE 8080
 CMD ["/app/scripts/start.sh"]
