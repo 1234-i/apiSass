@@ -1,0 +1,14 @@
+# Example only. Do not use for local mock validation.
+# Copy to docker-compose.real.yml and review carefully before real Sealos/K8s operations.
+services:
+  api:
+    env_file:
+      - .env.real
+    volumes:
+      - ./generated-manifests:/app/generated-manifests
+      - ./mock-runtime:/app/mock-runtime
+      - ${HOME}/.kube:/app/.kube:ro
+    environment:
+      ALLOW_REAL_EXTERNAL_CALLS: "true"
+      APPLY_K8S: "true"
+      K8S_APPLY_MODE: real

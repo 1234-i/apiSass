@@ -1,0 +1,9 @@
+.env
+.env.real-canary
+__pycache__/
+*.pyc
+.pytest_cache/
+generated-manifests/
+mock-runtime/
+real-kubeconfig/
+.venv/

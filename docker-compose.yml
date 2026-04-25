@@ -1,0 +1,71 @@
+services:
+  api:
+    build: .
+    container_name: ai-api-saas-control-plane
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./generated-manifests:/app/generated-manifests
+      - ./mock-runtime:/app/mock-runtime
+      - ${HOME}/.kube:/app/.kube:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: ai-api-saas-db
+    environment:
+      POSTGRES_USER: saas
+      POSTGRES_PASSWORD: saas
+      POSTGRES_DB: saas
+    ports:
+      - "54329:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saas -d saas"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-api-saas-redis
+    ports:
+      - "63799:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  tests:
+    build: .
+    profiles: ["test"]
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["pytest", "-q", "tests"]
+    volumes:
+      - ./generated-manifests:/app/generated-manifests
+      - ./mock-runtime:/app/mock-runtime
+
+volumes:
+  pgdata:
