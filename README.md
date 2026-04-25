@@ -15,9 +15,12 @@
 - New API manifest 增加生产相关 env：`CRYPTO_SECRET`、`TZ`、`STREAMING_TIMEOUT`、`ERROR_LOG_ENABLED`、`BATCH_UPDATE_ENABLED`。
 - 新增真实开站脚本骨架：`scripts/real_open_station.sh`。它有强制确认闸门，默认不会运行真实外部操作。
 - 新增 Real Canary 0 离线 doctor：`scripts/real_k8s_canary_doctor.sh` 和 `scripts/real_k8s_canary_doctor_matrix.sh`。它们只检查本地 `.env.real-canary`、kubeconfig 文件状态、gitignore 和安全开关，不调用 Kubernetes API。
+- 新增 Real Canary 0 Step 2 server-side dry-run 脚本骨架：`scripts/real_k8s_canary_server_dry_run.sh`。它必须由人类单独授权，只能执行 `kubectl apply --dry-run=server` 做 API server 校验，不持久化资源。
+- 新增 Step 2 静态保护：`scripts/real_k8s_canary_server_dry_run_static_check.sh`，并纳入 `local_validate.sh`。该检查不调用 `kubectl`。
 - 新增真实链路文档：`docs/REAL_OPEN_STATION_FLOW.md`。
 - 新增 Real Canary 0 runbook：`docs/REAL_CANARY_0_RUNBOOK.md`。
 - 真实 K8s preflight 只允许在人类明确授权后查询 Kubernetes API，确认词为 `I_UNDERSTAND_THIS_WILL_QUERY_K8S_API`。
+- 真实 K8s server-side dry-run 只允许在人类明确授权后查询 Kubernetes API server 做 manifest 校验，确认词为 `I_UNDERSTAND_THIS_WILL_QUERY_K8S_API_WITH_SERVER_DRY_RUN_BUT_NOT_CREATE_RESOURCES`。
 
 ## 本地一键验证
 
@@ -67,6 +70,25 @@ CLOUDFLARE_MOCK=true
 curl http://localhost:8080/api/v1/system/real-flow-preflight \
   -H 'X-API-Key: change-me-admin-token'
 ```
+
+## Real Canary 0
+
+Real Canary 0 分阶段推进，每一步都需要单独授权：
+
+1. `scripts/real_k8s_canary_doctor.sh --strict`
+   只做离线检查，不调用 Kubernetes API。
+2. `scripts/real_k8s_canary_preflight.sh`
+   只做 `kubectl version/current-context/auth can-i` 查询，不创建资源。
+3. `scripts/real_k8s_canary_server_dry_run.sh`
+   只做 `kubectl apply --dry-run=server`。这会向 Kubernetes API server 提交 manifest 做服务端校验，但不会持久化创建、修改或删除资源。
+
+Step 2 server-side dry-run 仍然禁止：
+
+- `real_k8s_canary_open.sh`
+- `real_k8s_canary_cleanup.sh`
+- `kubectl apply` 不带 `--dry-run=server`
+- `kubectl delete`
+- New API/Sub2API/Cloudflare/domain/API-key 真实调用
 
 ## 真实开站脚本骨架
 

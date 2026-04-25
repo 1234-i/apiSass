@@ -8,6 +8,7 @@ Current phase: local/mock/dry-run readiness only.
 - `bash ./scripts/check_env_files.sh`
 - `bash ./scripts/check_env_files.sh .env.real-canary`
 - `bash ./scripts/real_k8s_canary_static_check.sh`
+- `bash ./scripts/real_k8s_canary_server_dry_run_static_check.sh`
 - `bash ./scripts/real_k8s_canary_doctor.sh`
 - `bash ./scripts/real_k8s_canary_doctor_matrix.sh`
 - `bash ./scripts/local_validate.sh`
@@ -19,10 +20,13 @@ The doctor matrix creates only fake local files and refuses to run if `.env.real
 ## Codex Must Not Run Without Human-Specific Authorization
 
 - `bash ./scripts/real_k8s_canary_preflight.sh`
+- `bash ./scripts/real_k8s_canary_server_dry_run.sh`
 - `bash ./scripts/real_k8s_canary_open.sh`
 - `bash ./scripts/real_k8s_canary_cleanup.sh`
 
-The preflight script calls the Kubernetes API through `kubectl auth can-i`. The open and cleanup scripts can create, update, or delete real Kubernetes resources. They require explicit human authorization for that specific action in the Codex thread.
+The preflight script calls the Kubernetes API through `kubectl auth can-i`.
+The server-side dry-run script calls the Kubernetes API server through `kubectl apply --dry-run=server`; it must not persist resources.
+The open and cleanup scripts can create, update, or delete real Kubernetes resources. They require explicit human authorization for that specific action in the Codex thread.
 
 ## Offline Doctor
 
@@ -96,3 +100,35 @@ bash ./scripts/real_k8s_canary_preflight.sh
 ```
 
 That command queries the Kubernetes API but must not mutate resources.
+
+## Human-Authorized Server-Side Dry Run
+
+Only after Step 1 preflight passes, the human may separately authorize Step 2:
+
+```bash
+REAL_K8S_SERVER_DRY_RUN_CONFIRM=I_UNDERSTAND_THIS_WILL_QUERY_K8S_API_WITH_SERVER_DRY_RUN_BUT_NOT_CREATE_RESOURCES \
+SLUG=canary-server-dry-run-001 \
+EMAIL=canary@example.com \
+bash ./scripts/real_k8s_canary_server_dry_run.sh
+```
+
+This command runs `kubectl apply --dry-run=server` against the Kubernetes API server. The purpose is to validate rendered manifests with API-server admission/schema/RBAC checks without persisting resources.
+
+Step 2 must not run:
+
+- `real_k8s_canary_open.sh`
+- `real_k8s_canary_cleanup.sh`
+- `kubectl apply` without `--dry-run=server`
+- `kubectl delete`
+- `/api/v1/tenants/{id}/deploy` with `dry_run=false`
+- `/api/v1/tenants/{id}/provision`
+- New API, Sub2API, Cloudflare, domain, or API-key real operations
+
+Before Step 2, replace placeholder domain values in `.env.real-canary`:
+
+```env
+BASE_DOMAIN=example.com
+PUBLIC_GATEWAY_CNAME=ingress.example.com
+```
+
+with real test values for the canary domain and Sealos ingress. Step 2 does not call DNS or domain APIs, but the manifest should be validated with realistic host values.

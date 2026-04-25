@@ -5,6 +5,7 @@ bash ./scripts/check_host_permissions.sh >/dev/null
 bash ./scripts/check_source_format.sh
 bash ./scripts/check_env_files.sh
 bash ./scripts/real_k8s_canary_static_check.sh
+bash ./scripts/real_k8s_canary_server_dry_run_static_check.sh
 bash ./scripts/real_k8s_canary_doctor.sh
 if [ -f .env.real-canary ] || [ -d real-kubeconfig ]; then
   echo "Skipping doctor matrix because real canary files exist."
