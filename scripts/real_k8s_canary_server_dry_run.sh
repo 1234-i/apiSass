@@ -168,12 +168,41 @@ api_get "/api/v1/tenants/${tenant_id}" >/dev/null
 api_get "/api/v1/tenants/${tenant_id}/manifest-validation" >/dev/null
 
 tmp_manifest=$(mktemp)
-trap 'rm -f "$tmp_manifest"' EXIT
+host_dry_run_log=$(mktemp)
+container_dry_run_log=$(mktemp)
+trap 'rm -f "$tmp_manifest" "$host_dry_run_log" "$container_dry_run_log"' EXIT
 api_get "/api/v1/manifests/${tenant_id}" > "$tmp_manifest"
 echo "ok   wrote manifest to temporary file"
 
-host_kubectl apply --dry-run=server -f "$tmp_manifest"
-cat "$tmp_manifest" | container_kubectl apply --dry-run=server -f -
+assert_no_podsecurity_warning() {
+  local name="$1"
+  local log_file="$2"
+  if grep -qi "would violate PodSecurity" "$log_file"; then
+    echo "ERROR: server dry-run still reports PodSecurity warning in $name output" >&2
+    cat "$log_file" >&2
+    exit 1
+  fi
+  if grep -Eqi "allowPrivilegeEscalation|capabilities\\.drop|runAsNonRoot|seccompProfile" "$log_file"; then
+    echo "ERROR: server dry-run still reports restricted PodSecurity field warnings in $name output" >&2
+    cat "$log_file" >&2
+    exit 1
+  fi
+  echo "ok   $name server dry-run has no restricted PodSecurity warning"
+}
+
+if ! host_kubectl apply --dry-run=server -f "$tmp_manifest" >"$host_dry_run_log" 2>&1; then
+  cat "$host_dry_run_log" >&2
+  exit 1
+fi
+cat "$host_dry_run_log"
+assert_no_podsecurity_warning "host kubectl" "$host_dry_run_log"
+
+if ! cat "$tmp_manifest" | container_kubectl apply --dry-run=server -f - >"$container_dry_run_log" 2>&1; then
+  cat "$container_dry_run_log" >&2
+  exit 1
+fi
+cat "$container_dry_run_log"
+assert_no_podsecurity_warning "container kubectl" "$container_dry_run_log"
 
 remaining=$(
   host_kubectl get deployments.apps,services,ingresses.networking.k8s.io,horizontalpodautoscalers.autoscaling \

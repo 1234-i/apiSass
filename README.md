@@ -13,6 +13,8 @@
 - New API 适配器改为更接近真实管理 API：支持 `Authorization: Bearer`、可选 `New-Api-User`、`/api/channel/`、`/api/token/`。
 - Sub2API 适配器支持 `SUB2API_TENANT_KEY`：你可以先在 Sub2API 后台创建站长 key，用 Sub2API 自带账单给下游站长结算。
 - New API manifest 增加生产相关 env：`CRYPTO_SECRET`、`TZ`、`STREAMING_TIMEOUT`、`ERROR_LOG_ENABLED`、`BATCH_UPDATE_ENABLED`。
+- New API Deployment manifest 增加 Restricted PodSecurity 所需 hardening：关闭自动挂载 ServiceAccount token、Pod 级 `runAsNonRoot`/`RuntimeDefault` seccomp、Container 级 `allowPrivilegeEscalation=false` 和 `capabilities.drop=[ALL]`。
+- 新增可选 Pod 身份配置：`K8S_POD_RUN_AS_USER`、`K8S_POD_RUN_AS_GROUP`、`K8S_POD_FS_GROUP`。默认不硬编码 UID/GID，避免在未确认镜像文件权限前影响 rollout。
 - 新增真实开站脚本骨架：`scripts/real_open_station.sh`。它有强制确认闸门，默认不会运行真实外部操作。
 - 新增 Real Canary 0 离线 doctor：`scripts/real_k8s_canary_doctor.sh` 和 `scripts/real_k8s_canary_doctor_matrix.sh`。它们只检查本地 `.env.real-canary`、kubeconfig 文件状态、gitignore 和安全开关，不调用 Kubernetes API。
 - 新增 Real Canary 0 Step 2 server-side dry-run 脚本骨架：`scripts/real_k8s_canary_server_dry_run.sh`。它必须由人类单独授权，只能执行 `kubectl apply --dry-run=server` 做 API server 校验，不持久化资源。
@@ -89,6 +91,8 @@ Step 2 server-side dry-run 仍然禁止：
 - `kubectl apply` 不带 `--dry-run=server`
 - `kubectl delete`
 - New API/Sub2API/Cloudflare/domain/API-key 真实调用
+
+Step 2 通过但出现 PodSecurity restricted warning 时，不进入 Step 3。必须先修 manifest securityContext，并要求下一次 server-side dry-run 不再出现 `would violate PodSecurity`。ServiceAccount token warning 可能来自 kubeconfig token 类型；它应记录，但不直接作为 Step 3 blocker，除非 Sealos 明确拒绝该 token。
 
 ## 真实开站脚本骨架
 

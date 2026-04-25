@@ -62,6 +62,16 @@ else
   ok "no deploy endpoint or dry_run=false reference found"
 fi
 
+if [ -f "$TARGET" ] && grep -Fq "would violate PodSecurity" "$TARGET" \
+  && grep -Fq "allowPrivilegeEscalation" "$TARGET" \
+  && grep -Fq "capabilities" "$TARGET" \
+  && grep -Fq "runAsNonRoot" "$TARGET" \
+  && grep -Fq "seccompProfile" "$TARGET"; then
+  ok "restricted PodSecurity warning checks present"
+else
+  bad "restricted PodSecurity warning checks missing"
+fi
+
 apply_without_dry_run=$(
   python3 - "$TARGET" <<'PY'
 from pathlib import Path

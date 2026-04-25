@@ -28,6 +28,8 @@ The preflight script calls the Kubernetes API through `kubectl auth can-i`.
 The server-side dry-run script calls the Kubernetes API server through `kubectl apply --dry-run=server`; it must not persist resources.
 The open and cleanup scripts can create, update, or delete real Kubernetes resources. They require explicit human authorization for that specific action in the Codex thread.
 
+Step 3 must not run while Step 2 reports a PodSecurity restricted warning. The New API Deployment manifest must pass server-side dry-run without `would violate PodSecurity` before any persistent apply is considered.
+
 ## Offline Doctor
 
 Run:
@@ -114,6 +116,8 @@ bash ./scripts/real_k8s_canary_server_dry_run.sh
 
 This command runs `kubectl apply --dry-run=server` against the Kubernetes API server. The purpose is to validate rendered manifests with API-server admission/schema/RBAC checks without persisting resources.
 
+The script captures host and container `kubectl apply --dry-run=server` output and fails if Kubernetes reports restricted PodSecurity fields such as `allowPrivilegeEscalation`, `capabilities.drop`, `runAsNonRoot`, or `seccompProfile`.
+
 Step 2 must not run:
 
 - `real_k8s_canary_open.sh`
@@ -132,3 +136,25 @@ PUBLIC_GATEWAY_CNAME=ingress.example.com
 ```
 
 with real test values for the canary domain and Sealos ingress. Step 2 does not call DNS or domain APIs, but the manifest should be validated with realistic host values.
+
+## PodSecurity Restricted Hardening
+
+The rendered New API Deployment includes:
+
+- `spec.template.spec.automountServiceAccountToken=false`
+- `spec.template.spec.securityContext.runAsNonRoot=true`
+- `spec.template.spec.securityContext.seccompProfile.type=RuntimeDefault`
+- `spec.template.spec.containers[].securityContext.allowPrivilegeEscalation=false`
+- `spec.template.spec.containers[].securityContext.capabilities.drop=[ALL]`
+
+Do not add `readOnlyRootFilesystem=true` until the New API image write paths are confirmed. The current hardening intentionally targets the fields reported by Kubernetes PodSecurity restricted warnings.
+
+Optional pod identity fields are available but disabled by default:
+
+```env
+K8S_POD_RUN_AS_USER=
+K8S_POD_RUN_AS_GROUP=
+K8S_POD_FS_GROUP=
+```
+
+Set them only after confirming the New API image can run with that UID/GID and the required filesystem permissions. The ServiceAccount token warning emitted by kubectl can come from the kubeconfig token type; record it, but do not treat it as a manifest blocker unless Sealos rejects the request.

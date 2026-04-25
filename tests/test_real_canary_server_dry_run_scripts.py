@@ -48,6 +48,11 @@ def test_server_dry_run_script_contains_confirmation_and_server_dry_run_only():
     assert "/provision" not in text
     assert "/deploy" not in text
     assert "dry_run=false" not in text
+    assert "would violate PodSecurity" in text
+    assert "allowPrivilegeEscalation" in text
+    assert "capabilities" in text
+    assert "runAsNonRoot" in text
+    assert "seccompProfile" in text
 
 
 def test_server_dry_run_static_check_passes_without_calling_kubectl():

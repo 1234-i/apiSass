@@ -24,6 +24,31 @@ def namespace_for(settings: Settings, slug: str) -> str:
     return f'{settings.k8s_namespace_prefix}-{slug}'
 
 
+def _optional_int(value: str | int | None, name: str) -> int | None:
+    if value is None or value == '':
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'{name} must be an integer when set') from exc
+
+
+def _pod_security_context(settings: Settings) -> dict:
+    context: dict[str, object] = {
+        'runAsNonRoot': True,
+        'seccompProfile': {'type': 'RuntimeDefault'},
+    }
+    optional_fields = {
+        'runAsUser': _optional_int(settings.k8s_pod_run_as_user, 'K8S_POD_RUN_AS_USER'),
+        'runAsGroup': _optional_int(settings.k8s_pod_run_as_group, 'K8S_POD_RUN_AS_GROUP'),
+        'fsGroup': _optional_int(settings.k8s_pod_fs_group, 'K8S_POD_FS_GROUP'),
+    }
+    for key, value in optional_fields.items():
+        if value is not None:
+            context[key] = value
+    return context
+
+
 def desired_manifest_kinds(settings: Settings | None = None) -> set[str]:
     if settings and settings.k8s_namespace_mode == 'fixed' and not settings.k8s_create_namespace:
         return set(WORKLOAD_KINDS)
@@ -72,14 +97,21 @@ def render_newapi_manifests(settings: Settings, *, slug: str, domain: str, admin
             'spec': {
                 'replicas': settings.newapi_default_replicas,
                 'selector': {'matchLabels': labels},
-                'template': {'metadata': {'labels': labels}, 'spec': {'containers': [{
-                    'name': 'new-api', 'image': settings.newapi_image, 'imagePullPolicy': 'IfNotPresent',
-                    'ports': [{'containerPort': settings.newapi_container_port, 'name': 'http'}],
-                    'envFrom': [{'secretRef': {'name': secret_name}}],
-                    'readinessProbe': {'httpGet': {'path': '/', 'port': 'http'}, 'initialDelaySeconds': 10, 'periodSeconds': 10, 'failureThreshold': 6},
-                    'livenessProbe': {'httpGet': {'path': '/', 'port': 'http'}, 'initialDelaySeconds': 30, 'periodSeconds': 20, 'failureThreshold': 6},
-                    'resources': {'requests': {'cpu': '100m', 'memory': '256Mi'}, 'limits': {'cpu': '1000m', 'memory': '1Gi'}},
-                }]}}
+                'template': {'metadata': {'labels': labels}, 'spec': {
+                    'automountServiceAccountToken': False,
+                    'securityContext': _pod_security_context(settings),
+                    'containers': [{
+                        'name': 'new-api', 'image': settings.newapi_image, 'imagePullPolicy': 'IfNotPresent',
+                        'ports': [{'containerPort': settings.newapi_container_port, 'name': 'http'}],
+                        'envFrom': [{'secretRef': {'name': secret_name}}],
+                        'readinessProbe': {'httpGet': {'path': '/', 'port': 'http'}, 'initialDelaySeconds': 10, 'periodSeconds': 10, 'failureThreshold': 6},
+                        'livenessProbe': {'httpGet': {'path': '/', 'port': 'http'}, 'initialDelaySeconds': 30, 'periodSeconds': 20, 'failureThreshold': 6},
+                        'resources': {'requests': {'cpu': '100m', 'memory': '256Mi'}, 'limits': {'cpu': '1000m', 'memory': '1Gi'}},
+                        'securityContext': {
+                            'allowPrivilegeEscalation': False,
+                            'capabilities': {'drop': ['ALL']},
+                        },
+                    }]}}
             }
         },
         {
@@ -126,7 +158,25 @@ def validate_manifest(path: str, settings: Settings | None = None) -> dict:
     docs = load_manifest(path)
     kinds = [doc.get('kind') for doc in docs]
     missing = sorted(desired_manifest_kinds(settings) - set(kinds))
-    return {'ok': not missing, 'kinds': kinds, 'missing': missing, 'count': len(docs)}
+    missing_security: list[str] = []
+    for doc in docs:
+        if doc.get('kind') != 'Deployment':
+            continue
+        pod_spec = doc.get('spec', {}).get('template', {}).get('spec', {})
+        pod_security = pod_spec.get('securityContext', {})
+        containers = pod_spec.get('containers', [])
+        container_security = containers[0].get('securityContext', {}) if containers else {}
+        if pod_spec.get('automountServiceAccountToken') is not False:
+            missing_security.append('Deployment.spec.template.spec.automountServiceAccountToken=false')
+        if pod_security.get('runAsNonRoot') is not True:
+            missing_security.append('Deployment.spec.template.spec.securityContext.runAsNonRoot=true')
+        if pod_security.get('seccompProfile', {}).get('type') != 'RuntimeDefault':
+            missing_security.append('Deployment.spec.template.spec.securityContext.seccompProfile.type=RuntimeDefault')
+        if container_security.get('allowPrivilegeEscalation') is not False:
+            missing_security.append('Deployment container securityContext.allowPrivilegeEscalation=false')
+        if 'ALL' not in container_security.get('capabilities', {}).get('drop', []):
+            missing_security.append('Deployment container securityContext.capabilities.drop includes ALL')
+    return {'ok': not missing and not missing_security, 'kinds': kinds, 'missing': missing, 'missing_security': missing_security, 'count': len(docs)}
 
 
 def _mock_state_path(settings: Settings, slug: str) -> Path:
