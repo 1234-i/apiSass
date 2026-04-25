@@ -1,10 +1,16 @@
 import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import Settings
+from app.db.session import Base
+from app.models.tenant import DeploymentJob
 from app.services.cloudflare_client import CloudflareClient
 from app.services.k8s_renderer import kubectl_apply, render_newapi_manifests, validate_manifest, write_manifest
 from app.services.newapi_client import NewAPIClient
 from app.services.sub2api_client import Sub2APIClient
+from app.schemas.tenant import TenantCreate
+from app.services import tenant_service
 
 
 @pytest.mark.asyncio
@@ -18,6 +24,27 @@ async def test_newapi_adapter_stays_mock_when_global_gate_closed():
     result = await client.create_admin('admin', 'ChangeMe123!')
     assert result['status'] == 'mocked'
     assert '未调用真实 New API' in result['message']
+
+
+@pytest.mark.asyncio
+async def test_newapi_allowlist_blocks_real_call_even_with_token():
+    settings = Settings(
+        allow_real_external_calls=True,
+        real_external_allowlist='k8s',
+        newapi_mock=False,
+        newapi_admin_token='looks-real',
+        newapi_api_timeout_seconds=0.1,
+    )
+    client = NewAPIClient(
+        'http://127.0.0.1:9',
+        admin_token='looks-real',
+        mock=False,
+        allow_real=True,
+        settings=settings,
+    )
+    result = await client.create_token('demo', name='blocked-by-allowlist')
+    assert result['status'] == 'mocked'
+    assert result['token'].startswith('newapi-mock-token-')
 
 
 @pytest.mark.asyncio
@@ -94,6 +121,36 @@ async def test_sub2api_real_mode_can_use_static_tenant_key_without_admin_api():
     assert key == 'sub2api-real-tenant-key'
 
 
+@pytest.mark.asyncio
+async def test_sub2api_allowlist_blocks_static_key_and_health_probe():
+    settings = Settings(
+        allow_real_external_calls=True,
+        real_external_allowlist='k8s',
+        sub2api_mock=False,
+        sub2api_tenant_key='sub2api-real-tenant-key',
+        sub2api_admin_key='real-admin-key',
+    )
+    key = await Sub2APIClient(settings).create_tenant_key('demo')
+    verification = await Sub2APIClient(settings).verify_key('demo', key)
+    assert key.startswith(settings.sub2api_key_prefix)
+    assert verification['status'] == 'mock_verified'
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_allowlist_blocks_real_custom_hostname_call():
+    settings = Settings(
+        allow_real_external_calls=True,
+        real_external_allowlist='k8s',
+        cloudflare_mock=False,
+        cloudflare_api_token='real-cf-token',
+        cloudflare_zone_id='real-zone-id',
+        public_gateway_cname='ingress.example.com',
+    )
+    result = await CloudflareClient(settings).create_custom_hostname('api.customer.example')
+    assert result['status'] == 'mock_pending_validation'
+    assert result['dns_target'] == 'ingress.example.com'
+
+
 def test_fixed_namespace_manifest_omits_namespace_kind(tmp_path):
     settings = Settings(
         k8s_namespace_mode='fixed',
@@ -114,3 +171,54 @@ def test_fixed_namespace_manifest_omits_namespace_kind(tmp_path):
     manifest_path = write_manifest(settings, 'demo', docs)
     validation = validate_manifest(manifest_path, settings)
     assert validation['ok'] is True
+
+
+def test_empty_tls_secret_omits_ingress_tls():
+    settings = Settings(k8s_tls_secret_name='')
+    docs = render_newapi_manifests(
+        settings,
+        slug='demo',
+        domain='demo.example.com',
+        admin_username='admin',
+        admin_password='ChangeMe123!',
+    )
+    ingress = next(doc for doc in docs if doc['kind'] == 'Ingress')
+    assert 'tls' not in ingress['spec']
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_never_inline_real_applies(monkeypatch, tmp_path):
+    settings = Settings(
+        allow_real_external_calls=True,
+        real_external_allowlist='k8s',
+        apply_k8s=True,
+        k8s_apply_mode='real',
+        manifest_output_dir=str(tmp_path / 'manifests'),
+        mock_runtime_dir=str(tmp_path / 'runtime'),
+    )
+    monkeypatch.setattr(tenant_service, 'get_settings', lambda: settings)
+
+    def fail_inline_apply(*args, **kwargs):
+        raise AssertionError('create_tenant must not call kubectl_apply inline')
+
+    monkeypatch.setattr(tenant_service, 'kubectl_apply', fail_inline_apply)
+
+    engine = create_engine('sqlite:///:memory:')
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+
+    with SessionLocal() as db:
+        tenant = await tenant_service.create_tenant(
+            db,
+            TenantCreate(
+                name='Real Apply Blocked',
+                email='blocked@example.com',
+                slug='blocked-inline',
+                deploy=True,
+                apply_k8s=True,
+            ),
+        )
+        assert tenant.status == 'manifest_generated'
+        jobs = db.execute(select(DeploymentJob).where(DeploymentJob.tenant_id == tenant.id)).scalars().all()
+        assert any(job.action == 'inline_apply_blocked' for job in jobs)
+        assert any(job.action == 'create_tenant' and job.status == 'succeeded' for job in jobs)

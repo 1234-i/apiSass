@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import hashlib
 import httpx
 from app.core.config import Settings
-from app.services.safety import credential_present
+from app.services.safety import credential_present, real_external_enabled
 
 
 class Sub2APIClient:
@@ -21,7 +21,7 @@ class Sub2APIClient:
         你可以先在 Sub2API 后台给站长创建一个 key，然后让控制面把这个 key 写入 New API channel。
         这样可以直接复用 Sub2API 内置的下游账单和费用结算。
         """
-        if (not self.settings.allow_real_external_calls) or self.settings.sub2api_mock:
+        if not real_external_enabled(self.settings, 'sub2api'):
             return self._deterministic_key(tenant_slug)
         if credential_present(self.settings.sub2api_tenant_key):
             return str(self.settings.sub2api_tenant_key)
@@ -35,7 +35,7 @@ class Sub2APIClient:
         return self._deterministic_key(tenant_slug)
 
     async def verify_key(self, tenant_slug: str, api_key: str) -> dict:
-        if (not self.settings.allow_real_external_calls) or self.settings.sub2api_mock:
+        if not real_external_enabled(self.settings, 'sub2api'):
             return {
                 'status': 'mock_verified',
                 'tenant_slug': tenant_slug,

@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.services.safety import real_external_enabled
 
 
 class NewAPIClient:
@@ -49,6 +50,9 @@ class NewAPIClient:
     def _url(self, path: str) -> str:
         return f'{self.endpoint}/{path.lstrip("/")}'
 
+    def _should_mock(self) -> bool:
+        return self.mock or not self.allow_real or not self.admin_token or not real_external_enabled(self.settings, 'newapi')
+
     def _render_template_payload(self, template: str, values: dict[str, Any]) -> dict[str, Any]:
         rendered = template
         for key, value in values.items():
@@ -80,7 +84,7 @@ class NewAPIClient:
         }
 
     async def health_check(self) -> dict[str, Any]:
-        if self.mock or not self.allow_real or not self.admin_token:
+        if self._should_mock():
             return {
                 'status': 'mocked',
                 'operation': 'health_check',
@@ -94,7 +98,7 @@ class NewAPIClient:
 
     async def create_admin(self, username: str, password: str) -> dict[str, Any]:
         payload = {'username': username, 'password_length': len(password)}
-        if self.mock or not self.allow_real or not self.admin_token:
+        if self._should_mock():
             return {
                 'status': 'mocked',
                 'operation': 'create_admin',
@@ -122,7 +126,7 @@ class NewAPIClient:
             safe_payload_text = safe_payload_text.replace(api_key, f'***{api_key[-8:]}')
         safe_payload = json.loads(safe_payload_text)
 
-        if self.mock or not self.allow_real or not self.admin_token:
+        if self._should_mock():
             return {
                 'status': 'mocked',
                 'operation': 'create_channel',
@@ -142,7 +146,7 @@ class NewAPIClient:
 
     async def create_token(self, tenant_slug: str, name: str = 'default') -> dict[str, Any]:
         payload = {'name': name}
-        if self.mock or not self.allow_real or not self.admin_token:
+        if self._should_mock():
             return {
                 'status': 'mocked',
                 'operation': 'create_token',

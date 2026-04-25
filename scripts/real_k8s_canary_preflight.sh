@@ -61,14 +61,44 @@ if command -v kubectl >/dev/null 2>&1 && [ -f "$HOST_KUBECONFIG" ]; then
   fi
 
   if [ -n "$namespace" ]; then
-    for resource in deployment service ingress horizontalpodautoscaler; do
+    for resource in deployments.apps services ingresses.networking.k8s.io horizontalpodautoscalers.autoscaling; do
+      check_name=${resource//./_}
       if kubectl --kubeconfig "$HOST_KUBECONFIG" "${context_args[@]}" auth can-i create "$resource" -n "$namespace" >/dev/null 2>&1; then
-        check "can_create_${resource}" true "can create $resource in $namespace"
+        check "can_create_${check_name}" true "can create $resource in $namespace"
       else
-        check "can_create_${resource}" false "cannot create $resource in $namespace"
+        check "can_create_${check_name}" false "cannot create $resource in $namespace"
       fi
     done
   fi
+fi
+
+if command -v docker >/dev/null 2>&1 && docker compose ps api >/dev/null 2>&1; then
+  if docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api kubectl version --client=true >/dev/null 2>&1; then
+    check container_kubectl true "api container kubectl available"
+  else
+    check container_kubectl false "api container kubectl unavailable"
+  fi
+
+  container_namespace=${K8S_TARGET_NAMESPACE:-default}
+  if [ "${K8S_NAMESPACE_MODE:-generated}" != "fixed" ]; then
+    container_namespace=${K8S_TARGET_NAMESPACE:-default}
+    if docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api kubectl auth can-i create namespace >/dev/null 2>&1; then
+      check container_can_create_namespace true "api container can create namespace"
+    else
+      check container_can_create_namespace false "api container cannot create namespace"
+    fi
+  fi
+
+  for resource in deployments.apps services ingresses.networking.k8s.io horizontalpodautoscalers.autoscaling; do
+    check_name=${resource//./_}
+    if docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api kubectl auth can-i create "$resource" -n "$container_namespace" >/dev/null 2>&1; then
+      check "container_can_create_${check_name}" true "api container can create $resource in $container_namespace"
+    else
+      check "container_can_create_${check_name}" false "api container cannot create $resource in $container_namespace"
+    fi
+  done
+else
+  check container_compose false "api container is not running for in-container kubectl/auth checks"
 fi
 
 if [ "$failures" -gt 0 ]; then

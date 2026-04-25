@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import hashlib
 import httpx
 from app.core.config import Settings
-from app.services.safety import credential_present
+from app.services.safety import credential_present, real_external_enabled
 
 class CloudflareClient:
     def __init__(self, settings: Settings):
@@ -15,7 +15,7 @@ class CloudflareClient:
     async def create_custom_hostname(self, hostname: str) -> dict:
         """Cloudflare for SaaS custom hostname 适配点。默认 mock，不需要真实 Cloudflare。"""
         target = self.settings.cloudflare_custom_hostname_fallback_origin or self.settings.public_gateway_cname
-        if (not self.settings.allow_real_external_calls) or self.settings.cloudflare_mock or not self.enabled():
+        if not real_external_enabled(self.settings, 'cloudflare'):
             txt = hashlib.sha256(hostname.encode()).hexdigest()[:24]
             return {
                 'status': 'mock_pending_validation',
@@ -42,7 +42,7 @@ class CloudflareClient:
 
     async def verify_custom_hostname(self, hostname: str) -> dict:
         target = self.settings.cloudflare_custom_hostname_fallback_origin or self.settings.public_gateway_cname
-        if (not self.settings.allow_real_external_calls) or self.settings.cloudflare_mock or not self.enabled():
+        if not real_external_enabled(self.settings, 'cloudflare'):
             return {
                 'status': 'mock_active',
                 'hostname': hostname,

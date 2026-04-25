@@ -126,17 +126,14 @@ async def create_tenant(db: Session, payload: TenantCreate) -> Tenant:
     if payload.deploy:
         # create 阶段只负责生成清单；真实或 mock 部署由 /deploy 或 /provision 触发。
         instance = ensure_instance_manifest(db, tenant)
-        apply_k8s = settings.apply_k8s if payload.apply_k8s is None else payload.apply_k8s
-        if apply_k8s and not should_mock(settings, force_dry_run=False):
-            ok, output, meta = kubectl_apply(settings, instance.manifest_path, force_dry_run=False)
-            instance.last_apply_output = output
-            instance.status = 'applied' if ok else 'apply_failed'
-            if not ok:
-                tenant.status = 'apply_failed'
-                add_job(db, tenant, action='kubectl_apply', status='failed', message={'output': output, 'meta': meta})
-                db.add_all([tenant, instance])
-                db.commit()
-                raise HTTPException(status_code=500, detail={'message': 'kubectl apply failed', 'output': output})
+        if payload.apply_k8s:
+            add_job(
+                db,
+                tenant,
+                action='inline_apply_blocked',
+                status='succeeded',
+                message='create_tenant never performs real inline apply; call /deploy explicitly after reviewing the deployment plan',
+            )
         tenant.status = 'manifest_generated'
         db.add(instance)
 

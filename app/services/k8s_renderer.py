@@ -37,6 +37,15 @@ def render_newapi_manifests(settings: Settings, *, slug: str, domain: str, admin
     secret_name = f'{name}-secret'
     sql_dsn = settings.newapi_sql_dsn_template.format(slug=slug)
     redis_conn = settings.newapi_redis_conn_template.format(slug=slug)
+    ingress_spec = {
+        'ingressClassName': settings.k8s_ingress_class,
+        'rules': [{'host': domain, 'http': {'paths': [{
+            'path': '/', 'pathType': 'Prefix',
+            'backend': {'service': {'name': name, 'port': {'number': 80}}}
+        }]}}]
+    }
+    if settings.k8s_tls_secret_name and settings.k8s_tls_secret_name.strip():
+        ingress_spec['tls'] = [{'hosts': [domain], 'secretName': settings.k8s_tls_secret_name}]
 
     docs: list[dict] = []
     if settings.k8s_namespace_mode == 'generated' or settings.k8s_create_namespace:
@@ -83,14 +92,7 @@ def render_newapi_manifests(settings: Settings, *, slug: str, domain: str, admin
                 'name': name, 'namespace': ns,
                 'annotations': {'kubernetes.io/ingress.class': settings.k8s_ingress_class}
             },
-            'spec': {
-                'ingressClassName': settings.k8s_ingress_class,
-                'tls': [{'hosts': [domain], 'secretName': settings.k8s_tls_secret_name}],
-                'rules': [{'host': domain, 'http': {'paths': [{
-                    'path': '/', 'pathType': 'Prefix',
-                    'backend': {'service': {'name': name, 'port': {'number': 80}}}
-                }]}}]
-            }
+            'spec': ingress_spec
         },
         {
             'apiVersion': 'autoscaling/v2', 'kind': 'HorizontalPodAutoscaler',

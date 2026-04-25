@@ -46,7 +46,11 @@ api_request() {
   echo "HTTP $code for $method $path" >&2; cat "$tmp" >&2; echo >&2; rm -f "$tmp"; return 1
 }
 api_get(){ api_request GET "$1"; }
-api_post(){ local path="$1"; local body="${2:-{}}"; api_request POST "$path" "$body"; }
+api_post(){
+  local path="$1" body="${2-}"
+  [ -n "$body" ] || body='{}'
+  api_request POST "$path" "$body"
+}
 
 echo '== real-flow preflight =='
 PREFLIGHT=$(api_get "/api/v1/system/real-flow-preflight")
@@ -95,12 +99,18 @@ DEPLOY_RESP=$(api_post "/api/v1/tenants/$TENANT_ID/deploy" '{"dry_run":false,"wa
 echo "$DEPLOY_RESP" | pretty
 
 echo '== tenant detail =='
-api_get "/api/v1/tenants/$TENANT_ID" | pretty
+TENANT_DETAIL=$(api_get "/api/v1/tenants/$TENANT_ID")
+echo "$TENANT_DETAIL" | pretty
 
 echo '== runtime state =='
 api_get "/api/v1/mock/runtime/$SLUG" | pretty
 
-namespace=${K8S_TARGET_NAMESPACE:-ai-tenant-$SLUG}
+namespace=$(echo "$TENANT_DETAIL" | "$PYBIN" -c 'import json,sys
+d=json.load(sys.stdin)
+instances=d.get("instances") or []
+print(d.get("namespace") or (instances[0].get("namespace") if instances else "") or "")
+')
+[ -n "$namespace" ] || namespace=${K8S_TARGET_NAMESPACE:-ai-tenant-$SLUG}
 echo '== kubectl resources =='
 docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api \
   kubectl get deployment,service,ingress,pods -n "$namespace" -l "app=newapi-$SLUG" -o wide

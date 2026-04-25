@@ -35,12 +35,19 @@ for row in json.load(sys.stdin):
 
 if [ -z "$TENANT_ID" ]; then
   echo "tenant for slug=$SLUG not found; attempting kubectl lookup only"
+  namespace=${K8S_TARGET_NAMESPACE:-ai-tenant-$SLUG}
 else
+  TENANT_DETAIL=$(api_get "/api/v1/tenants/$TENANT_ID")
+  namespace=$(echo "$TENANT_DETAIL" | "$PYBIN" -c 'import json,sys
+d=json.load(sys.stdin)
+instances=d.get("instances") or []
+print(d.get("namespace") or (instances[0].get("namespace") if instances else "") or "")
+')
+  [ -n "$namespace" ] || namespace=${K8S_TARGET_NAMESPACE:-ai-tenant-$SLUG}
   echo "== delete runtime via control plane =="
   api_post "/api/v1/tenants/$TENANT_ID/delete-runtime" | "$PYBIN" -m json.tool
 fi
 
-namespace=${K8S_TARGET_NAMESPACE:-ai-tenant-$SLUG}
 echo '== verify resources removed =='
 if docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api \
   kubectl get deployment,service,ingress -n "$namespace" -l "app=newapi-$SLUG" --ignore-not-found=true | grep -q "newapi-$SLUG"; then

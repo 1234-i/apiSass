@@ -27,6 +27,15 @@ cp -n .env.example .env
 
 `scripts/smoke_test.sh` 已自动选择 `python3`，没有 `python3` 时才回退到 `python`。
 
+Host-side pytest requires Python >= 3.10 because the codebase uses modern union type annotations such as `str | None`. The recommended validation path is Docker:
+
+```bash
+./scripts/local_validate.sh
+docker compose exec api pytest -q tests
+```
+
+Do not treat host Python 3.9 pytest collection failures as application regressions; run pytest in the Python 3.12 container instead.
+
 ## 容器内测试
 
 v0.7 开始 Dockerfile 会复制 `tests/`，可以直接运行：
@@ -79,4 +88,3 @@ script permission check OK
 ```bash
 ./scripts/local_validate.sh
 ```
-
