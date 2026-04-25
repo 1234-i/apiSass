@@ -12,8 +12,48 @@ WORKLOAD_KINDS = {'Secret', 'Deployment', 'Service', 'Ingress', 'HorizontalPodAu
 REQUIRED_KINDS = {'Namespace'} | WORKLOAD_KINDS
 
 
-def _labels(slug: str) -> dict[str, str]:
-    return {'app': f'newapi-{slug}', 'tenant': slug, 'managed-by': 'ai-api-saas-control-plane'}
+def _selector_labels(slug: str) -> dict[str, str]:
+    return {
+        'app': f'newapi-{slug}',
+        'tenant': slug,
+        'managed-by': 'ai-api-saas-control-plane',
+        'app.kubernetes.io/managed-by': 'api-saas-control-plane',
+    }
+
+
+def _labels(slug: str, settings: Settings | None = None) -> dict[str, str]:
+    labels = _selector_labels(slug)
+    if settings and settings.k8s_canary_mode:
+        labels.update({
+            'api-saas.weisoft.chat/canary': 'true',
+            'api-saas.weisoft.chat/tenant-slug': slug,
+        })
+    return labels
+
+
+def _annotations(settings: Settings) -> dict[str, str]:
+    if not settings.k8s_canary_mode:
+        return {}
+    return {
+        'api-saas.weisoft.chat/canary-created-at': datetime.now(timezone.utc).isoformat(),
+        'api-saas.weisoft.chat/canary-max-lifetime-seconds': str(settings.k8s_canary_max_lifetime_seconds),
+    }
+
+
+def _metadata(name: str, namespace: str | None, labels: dict[str, str], annotations: dict[str, str]) -> dict:
+    metadata: dict[str, object] = {'name': name, 'labels': labels}
+    if namespace:
+        metadata['namespace'] = namespace
+    if annotations:
+        metadata['annotations'] = annotations
+    return metadata
+
+
+def _template_metadata(labels: dict[str, str], annotations: dict[str, str]) -> dict:
+    metadata: dict[str, object] = {'labels': labels}
+    if annotations:
+        metadata['annotations'] = annotations
+    return metadata
 
 
 def namespace_for(settings: Settings, slug: str) -> str:
@@ -58,7 +98,9 @@ def desired_manifest_kinds(settings: Settings | None = None) -> set[str]:
 def render_newapi_manifests(settings: Settings, *, slug: str, domain: str, admin_username: str, admin_password: str) -> list[dict]:
     ns = namespace_for(settings, slug)
     name = f'newapi-{slug}'
-    labels = _labels(slug)
+    selector_labels = _selector_labels(slug)
+    labels = _labels(slug, settings)
+    annotations = _annotations(settings)
     secret_name = f'{name}-secret'
     sql_dsn = settings.newapi_sql_dsn_template.format(slug=slug)
     redis_conn = settings.newapi_redis_conn_template.format(slug=slug)
@@ -74,10 +116,10 @@ def render_newapi_manifests(settings: Settings, *, slug: str, domain: str, admin
 
     docs: list[dict] = []
     if settings.k8s_namespace_mode == 'generated' or settings.k8s_create_namespace:
-        docs.append({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': ns, 'labels': {'tenant': slug, 'managed-by': 'ai-api-saas-control-plane'}}})
+        docs.append({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': _metadata(ns, None, labels, annotations)})
     docs.extend([
         {
-            'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': secret_name, 'namespace': ns},
+            'apiVersion': 'v1', 'kind': 'Secret', 'metadata': _metadata(secret_name, ns, labels, annotations),
             'type': 'Opaque', 'stringData': {
                 'SQL_DSN': sql_dsn,
                 'REDIS_CONN_STRING': redis_conn,
@@ -93,11 +135,11 @@ def render_newapi_manifests(settings: Settings, *, slug: str, domain: str, admin
             }
         },
         {
-            'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': {'name': name, 'namespace': ns, 'labels': labels},
+            'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': _metadata(name, ns, labels, annotations),
             'spec': {
                 'replicas': settings.newapi_default_replicas,
-                'selector': {'matchLabels': labels},
-                'template': {'metadata': {'labels': labels}, 'spec': {
+                'selector': {'matchLabels': selector_labels},
+                'template': {'metadata': _template_metadata(labels, annotations), 'spec': {
                     'automountServiceAccountToken': False,
                     'securityContext': _pod_security_context(settings),
                     'containers': [{
@@ -115,20 +157,22 @@ def render_newapi_manifests(settings: Settings, *, slug: str, domain: str, admin
             }
         },
         {
-            'apiVersion': 'v1', 'kind': 'Service', 'metadata': {'name': name, 'namespace': ns, 'labels': labels},
-            'spec': {'selector': labels, 'ports': [{'name': 'http', 'port': 80, 'targetPort': 'http'}]}
+            'apiVersion': 'v1', 'kind': 'Service', 'metadata': _metadata(name, ns, labels, annotations),
+            'spec': {'selector': selector_labels, 'ports': [{'name': 'http', 'port': 80, 'targetPort': 'http'}]}
         },
         {
             'apiVersion': 'networking.k8s.io/v1', 'kind': 'Ingress',
-            'metadata': {
-                'name': name, 'namespace': ns,
-                'annotations': {'kubernetes.io/ingress.class': settings.k8s_ingress_class}
-            },
+            'metadata': _metadata(
+                name,
+                ns,
+                labels,
+                {'kubernetes.io/ingress.class': settings.k8s_ingress_class, **annotations},
+            ),
             'spec': ingress_spec
         },
         {
             'apiVersion': 'autoscaling/v2', 'kind': 'HorizontalPodAutoscaler',
-            'metadata': {'name': name, 'namespace': ns},
+            'metadata': _metadata(name, ns, labels, annotations),
             'spec': {
                 'scaleTargetRef': {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'name': name},
                 'minReplicas': settings.newapi_default_replicas,

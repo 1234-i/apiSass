@@ -19,6 +19,8 @@
 - 新增 Real Canary 0 离线 doctor：`scripts/real_k8s_canary_doctor.sh` 和 `scripts/real_k8s_canary_doctor_matrix.sh`。它们只检查本地 `.env.real-canary`、kubeconfig 文件状态、gitignore 和安全开关，不调用 Kubernetes API。
 - 新增 Real Canary 0 Step 2 server-side dry-run 脚本骨架：`scripts/real_k8s_canary_server_dry_run.sh`。它必须由人类单独授权，只能执行 `kubectl apply --dry-run=server` 做 API server 校验，不持久化资源。
 - 新增 Step 2 静态保护：`scripts/real_k8s_canary_server_dry_run_static_check.sh`，并纳入 `local_validate.sh`。该检查不调用 `kubectl`。
+- 新增 Real Canary 0 Step 3 护栏脚本：`scripts/real_k8s_canary_apply_and_cleanup.sh`。它必须由人类单独授权，会真实创建 K8s canary 资源并立即 cleanup；本地验证只运行静态检查，不执行该脚本。
+- 新增 canary 标签和 TTL annotation：保留 `app=newapi-<slug>` 作为稳定 selector，额外使用 `api-saas.weisoft.chat/canary=true` 和 `api-saas.weisoft.chat/tenant-slug=<slug>` 做 cleanup/post-check。
 - 新增真实链路文档：`docs/REAL_OPEN_STATION_FLOW.md`。
 - 新增 Real Canary 0 runbook：`docs/REAL_CANARY_0_RUNBOOK.md`。
 - 真实 K8s preflight 只允许在人类明确授权后查询 Kubernetes API，确认词为 `I_UNDERSTAND_THIS_WILL_QUERY_K8S_API`。
@@ -83,6 +85,8 @@ Real Canary 0 分阶段推进，每一步都需要单独授权：
    只做 `kubectl version/current-context/auth can-i` 查询，不创建资源。
 3. `scripts/real_k8s_canary_server_dry_run.sh`
    只做 `kubectl apply --dry-run=server`。这会向 Kubernetes API server 提交 manifest 做服务端校验，但不会持久化创建、修改或删除资源。
+4. `scripts/real_k8s_canary_apply_and_cleanup.sh`
+   真实创建一个 K8s canary runtime，然后无论成功或失败都尝试 cleanup。此步骤必须单独授权，且只允许测试 namespace、测试 DB/Redis 和 K8s 外呼。
 
 Step 2 server-side dry-run 仍然禁止：
 
@@ -93,6 +97,16 @@ Step 2 server-side dry-run 仍然禁止：
 - New API/Sub2API/Cloudflare/domain/API-key 真实调用
 
 Step 2 通过但出现 PodSecurity restricted warning 时，不进入 Step 3。必须先修 manifest securityContext，并要求下一次 server-side dry-run 不再出现 `would violate PodSecurity`。ServiceAccount token warning 可能来自 kubeconfig token 类型；它应记录，但不直接作为 Step 3 blocker，除非 Sealos 明确拒绝该 token。
+
+Step 3 只允许通过 `/api/v1/tenants/{tenant_id}/deploy` 且 body 为 `{"dry_run": false}` 触发真实 K8s apply。Step 3 不允许调用 `/provision`，也不允许调用真实 New API、Sub2API、Cloudflare、domain API 或 API-key 操作。
+
+Step 3 canary cleanup/post-check 使用组合 selector：
+
+```text
+app=newapi-<slug>,api-saas.weisoft.chat/canary=true,api-saas.weisoft.chat/tenant-slug=<slug>
+```
+
+`api-saas.weisoft.chat/canary` 和 `api-saas.weisoft.chat/tenant-slug` 只用于 metadata cleanup/audit，不进入 Deployment selector 或 Service selector。
 
 ## 真实开站脚本骨架
 

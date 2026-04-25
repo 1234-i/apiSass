@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     k8s_pod_run_as_user: str | None = None
     k8s_pod_run_as_group: str | None = None
     k8s_pod_fs_group: str | None = None
+    k8s_canary_mode: bool = False
+    k8s_canary_max_lifetime_seconds: int = 600
     newapi_image: str = 'calciumion/new-api:latest'
     newapi_container_port: int = 3000
     newapi_default_replicas: int = 1

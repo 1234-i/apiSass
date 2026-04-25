@@ -158,3 +158,61 @@ K8S_POD_FS_GROUP=
 ```
 
 Set them only after confirming the New API image can run with that UID/GID and the required filesystem permissions. The ServiceAccount token warning emitted by kubectl can come from the kubeconfig token type; record it, but do not treat it as a manifest blocker unless Sealos rejects the request.
+
+## Step 3 Guarded Apply And Cleanup
+
+Step 3 is the first Real Canary phase that creates persistent Kubernetes resources. It must be separately authorized by a human for that exact run.
+
+The only allowed Step 3 entrypoint is:
+
+```bash
+REAL_K8S_APPLY_CLEANUP_CONFIRM=I_UNDERSTAND_THIS_WILL_CREATE_K8S_RESOURCES_AND_THEN_CLEAN_THEM_UP \
+SLUG=canary-real-apply-001 \
+EMAIL=canary@example.com \
+bash ./scripts/real_k8s_canary_apply_and_cleanup.sh
+```
+
+Step 3 will:
+
+- create real Kubernetes canary resources in the configured test namespace
+- call `/api/v1/tenants/{tenant_id}/deploy` with `{"dry_run": false}`
+- refuse placeholder test DB/Redis settings before apply
+- keep New API, Sub2API, Cloudflare, domain, and API-key operations mocked
+- avoid `/api/v1/tenants/{tenant_id}/provision`
+- run the Step 2 server-side dry-run first
+- attempt cleanup on success or failure
+
+Step 3 must use test infrastructure only:
+
+- a test Sealos namespace
+- test PostgreSQL and Redis values usable by the New API pod
+- no production DB/Redis
+- no production domain automation
+
+When `K8S_CANARY_MODE=true`, manifests keep the stable selector label:
+
+```yaml
+app: newapi-<slug>
+```
+
+The canary labels are added separately for cleanup and audit:
+
+```yaml
+api-saas.weisoft.chat/canary: "true"
+api-saas.weisoft.chat/tenant-slug: <slug>
+```
+
+Those canary labels must not be added to Deployment or Service selectors. Cleanup and post-check use the combined selector:
+
+```bash
+app=newapi-${SLUG},api-saas.weisoft.chat/canary=true,api-saas.weisoft.chat/tenant-slug=${SLUG}
+```
+
+The canary annotations are:
+
+```yaml
+api-saas.weisoft.chat/canary-created-at: "<timestamp>"
+api-saas.weisoft.chat/canary-max-lifetime-seconds: "600"
+```
+
+The TTL annotation is an audit marker only; cleanup is still performed by the Step 3 wrapper.
