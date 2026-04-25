@@ -6,4 +6,4 @@ services:
     volumes:
       - ./generated-manifests:/app/generated-manifests
       - ./mock-runtime:/app/mock-runtime
-      - ./real-kubeconfig/sealos-canary.yaml:/app/.kube/sealos-canary.yaml:ro
+      - ./real-kubeconfig:/app/.kube:ro

@@ -50,13 +50,23 @@ HOST_KUBECONFIG=${REAL_KUBECONFIG_HOST_PATH:-./real-kubeconfig/sealos-canary.yam
 check kubeconfig_path "$([ -f "$HOST_KUBECONFIG" ] && echo true || echo false)" "$HOST_KUBECONFIG exists"
 check kubectl_binary "$(command -v kubectl >/dev/null 2>&1 && echo true || echo false)" "host kubectl available"
 
-if command -v kubectl >/dev/null 2>&1 && [ -f "$HOST_KUBECONFIG" ]; then
-  context_args=()
+host_kubectl() {
   if [ -n "${K8S_CONTEXT:-}" ]; then
-    context_args=(--context "$K8S_CONTEXT")
+    kubectl --kubeconfig "$HOST_KUBECONFIG" --context "$K8S_CONTEXT" "$@"
+  else
+    kubectl --kubeconfig "$HOST_KUBECONFIG" "$@"
   fi
-  kubectl --kubeconfig "$HOST_KUBECONFIG" "${context_args[@]}" version --client=true >/dev/null
-  current_context=$(kubectl --kubeconfig "$HOST_KUBECONFIG" "${context_args[@]}" config current-context 2>/dev/null || true)
+}
+
+container_kubectl() {
+  docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T \
+    -e KUBECONFIG="${KUBECONFIG_PATH:-/app/.kube/sealos-canary.yaml}" \
+    api kubectl "$@"
+}
+
+if command -v kubectl >/dev/null 2>&1 && [ -f "$HOST_KUBECONFIG" ]; then
+  host_kubectl version --client=true >/dev/null
+  current_context=$(host_kubectl config current-context 2>/dev/null || true)
   check kubectl_context "$([ -n "$current_context" ] && echo true || echo false)" "current-context=${current_context:-missing}"
 
   namespace=${K8S_TARGET_NAMESPACE:-}
@@ -64,7 +74,7 @@ if command -v kubectl >/dev/null 2>&1 && [ -f "$HOST_KUBECONFIG" ]; then
     check target_namespace "$([ -n "$namespace" ] && echo true || echo false)" "K8S_TARGET_NAMESPACE is set"
   else
     namespace=${K8S_TARGET_NAMESPACE:-default}
-    if kubectl --kubeconfig "$HOST_KUBECONFIG" "${context_args[@]}" auth can-i create namespace >/dev/null 2>&1; then
+    if host_kubectl auth can-i create namespace >/dev/null 2>&1; then
       check can_create_namespace true "can create namespace"
     else
       check can_create_namespace false "cannot create namespace"
@@ -74,7 +84,7 @@ if command -v kubectl >/dev/null 2>&1 && [ -f "$HOST_KUBECONFIG" ]; then
   if [ -n "$namespace" ]; then
     for resource in deployments.apps services ingresses.networking.k8s.io horizontalpodautoscalers.autoscaling; do
       check_name=${resource//./_}
-      if kubectl --kubeconfig "$HOST_KUBECONFIG" "${context_args[@]}" auth can-i create "$resource" -n "$namespace" >/dev/null 2>&1; then
+      if host_kubectl auth can-i create "$resource" -n "$namespace" >/dev/null 2>&1; then
         check "can_create_${check_name}" true "can create $resource in $namespace"
       else
         check "can_create_${check_name}" false "cannot create $resource in $namespace"
@@ -84,7 +94,7 @@ if command -v kubectl >/dev/null 2>&1 && [ -f "$HOST_KUBECONFIG" ]; then
 fi
 
 if command -v docker >/dev/null 2>&1 && docker compose ps api >/dev/null 2>&1; then
-  if docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api kubectl version --client=true >/dev/null 2>&1; then
+  if container_kubectl version --client=true >/dev/null 2>&1; then
     check container_kubectl true "api container kubectl available"
   else
     check container_kubectl false "api container kubectl unavailable"
@@ -93,7 +103,7 @@ if command -v docker >/dev/null 2>&1 && docker compose ps api >/dev/null 2>&1; t
   container_namespace=${K8S_TARGET_NAMESPACE:-default}
   if [ "${K8S_NAMESPACE_MODE:-generated}" != "fixed" ]; then
     container_namespace=${K8S_TARGET_NAMESPACE:-default}
-    if docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api kubectl auth can-i create namespace >/dev/null 2>&1; then
+    if container_kubectl auth can-i create namespace >/dev/null 2>&1; then
       check container_can_create_namespace true "api container can create namespace"
     else
       check container_can_create_namespace false "api container cannot create namespace"
@@ -102,7 +112,7 @@ if command -v docker >/dev/null 2>&1 && docker compose ps api >/dev/null 2>&1; t
 
   for resource in deployments.apps services ingresses.networking.k8s.io horizontalpodautoscalers.autoscaling; do
     check_name=${resource//./_}
-    if docker compose -f docker-compose.yml -f docker-compose.real-canary.yml exec -T api kubectl auth can-i create "$resource" -n "$container_namespace" >/dev/null 2>&1; then
+    if container_kubectl auth can-i create "$resource" -n "$container_namespace" >/dev/null 2>&1; then
       check "container_can_create_${check_name}" true "api container can create $resource in $container_namespace"
     else
       check "container_can_create_${check_name}" false "api container cannot create $resource in $container_namespace"
